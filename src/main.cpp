@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
+#include "secrets.h"
 
 // --- SETTINGS ---
 const char* ssid = "";
@@ -17,7 +18,7 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
 
     Serial.println("\n--- Starting WiFi Connection ---");
-    WiFi.begin(ssid, password);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
 }
 
 void loop() {
