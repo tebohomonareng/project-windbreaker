@@ -1,13 +1,12 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-#include <lvgl.h>
 #include <SPI.h> 
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <time.h>
 #include "secrets.h"
 
-// --- Pin Definitions ---
 const int LED_PIN = 2; 
 #define OLED_DC     26   
 #define OLED_CS     14   
@@ -15,98 +14,112 @@ const int LED_PIN = 2;
 
 Adafruit_SSD1306 display(128, 64, &SPI, OLED_DC, OLED_RESET, OLED_CS);
 
-static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf[128 * 64];
-
-// UI Elements (global so we can update them)
-lv_obj_t * header_bar;
-lv_obj_t * wifi_icon;
-lv_obj_t * time_label;
-lv_obj_t * battery_label;
-
 unsigned long previousMillis = 0;
 int blinkInterval = 1000;
-bool isConnected = false; 
+bool isConnected = false;
+bool timeConfigured = false;
 
-// Flush function: Maps LVGL pixels to Adafruit pixels
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
-    for(int16_t y = area->y1; y <= area->y2; y++) {
-        for(int16_t x = area->x1; x <= area->x2; x++) {
-            display.drawPixel(x, y, color_p->full ? WHITE : BLACK);
-            color_p++;
-        }
+// Draw WiFi icon with curved arcs
+void drawWiFiIcon(int x, int y, int strength) {
+    // Draw dot at bottom (always on if connected)
+    display.fillCircle(x, y, 1, SSD1306_WHITE);
+    
+    // Draw arcs based on signal strength (1-4)
+    if (strength >= 1) {
+        // First arc (smallest/closest)
+        display.drawPixel(x-1, y-1, SSD1306_WHITE);
+        display.drawPixel(x+1, y-1, SSD1306_WHITE);
+        display.drawPixel(x-2, y-2, SSD1306_WHITE);
+        display.drawPixel(x+2, y-2, SSD1306_WHITE);
     }
+    
+    if (strength >= 2) {
+        // Second arc
+        display.drawPixel(x-2, y-3, SSD1306_WHITE);
+        display.drawPixel(x+2, y-3, SSD1306_WHITE);
+        display.drawPixel(x-3, y-4, SSD1306_WHITE);
+        display.drawPixel(x+3, y-4, SSD1306_WHITE);
+        display.drawPixel(x-4, y-5, SSD1306_WHITE);
+        display.drawPixel(x+4, y-5, SSD1306_WHITE);
+    }
+    
+    if (strength >= 3) {
+        // Third arc
+        display.drawPixel(x-4, y-6, SSD1306_WHITE);
+        display.drawPixel(x+4, y-6, SSD1306_WHITE);
+        display.drawPixel(x-5, y-7, SSD1306_WHITE);
+        display.drawPixel(x+5, y-7, SSD1306_WHITE);
+        display.drawPixel(x-6, y-8, SSD1306_WHITE);
+        display.drawPixel(x+6, y-8, SSD1306_WHITE);
+    }
+    
+    if (strength >= 4) {
+        // Fourth arc (largest/furthest)
+        display.drawPixel(x-6, y-9, SSD1306_WHITE);
+        display.drawPixel(x+6, y-9, SSD1306_WHITE);
+        display.drawPixel(x-7, y-10, SSD1306_WHITE);
+        display.drawPixel(x+7, y-10, SSD1306_WHITE);
+        display.drawPixel(x-8, y-11, SSD1306_WHITE);
+        display.drawPixel(x+8, y-11, SSD1306_WHITE);
+    }
+}
+
+void drawHomeScreen() {
+    display.clearDisplay();
+    
+    // Header
+    display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
+    
+    // WiFi strength indicator
+    if (WiFi.status() == WL_CONNECTED) {
+        int rssi = WiFi.RSSI();
+        int strength;
+        
+        // Map RSSI to strength (1-4 bars)
+        if (rssi >= -50) strength = 4;      // Excellent
+        else if (rssi >= -60) strength = 3; // Good
+        else if (rssi >= -70) strength = 2; // Fair
+        else if (rssi >= -80) strength = 1; // Weak
+        else strength = 1;                   // Very weak
+        
+        drawWiFiIcon(10, 10, strength);
+        
+    } else {
+        // Not connected - show X
+        display.setTextSize(1);
+        display.setCursor(6, 2);
+        display.print("X");
+    }
+    
+    // Time (center)
+    display.setTextSize(1);
+    display.setCursor(50, 2);
+    time_t now = time(nullptr);
+    if (now > 1577836800) {
+        struct tm* timeinfo = localtime(&now);
+        char time_str[6];
+        strftime(time_str, sizeof(time_str), "%H:%M", timeinfo);
+        display.print(time_str);
+    } else {
+        display.print("--:--");
+    }
+    
+    // Battery (right)
+    display.setCursor(95, 2);
+    display.print("100%");
+    
+    // Content area
+    display.setCursor(30, 20);
+    display.print("ESP32 Ready");
+    
+    display.setCursor(5, 35);
+    display.print("WiFi");
+    display.setCursor(5, 45);
+    display.print("BT Scan");
+    display.setCursor(5, 55);
+    display.print("Settings");
+    
     display.display();
-    lv_disp_flush_ready(disp);
-}
-
-void create_header_bar() {
-    // Create header container
-    header_bar = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(header_bar, 128, 12);  // Full width, 12px height
-    lv_obj_align(header_bar, LV_ALIGN_TOP_MID, 0, 0);
-    
-    // Style the header
-    lv_obj_set_style_radius(header_bar, 0, 0);
-    lv_obj_set_style_border_width(header_bar, 0, 0);
-    lv_obj_set_style_pad_all(header_bar, 2, 0);
-    lv_obj_set_style_bg_color(header_bar, lv_color_black(), 0);
-    
-    // WiFi icon (left side)
-    wifi_icon = lv_label_create(header_bar);
-    lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
-    lv_obj_align(wifi_icon, LV_ALIGN_LEFT_MID, 2, 0);
-    // lv_obj_set_style_text_font(wifi_icon, &lv_font_montserrat_8, 0);
-    
-    // Time label (center)
-    time_label = lv_label_create(header_bar);
-    lv_label_set_text(time_label, "12:34");
-    lv_obj_align(time_label, LV_ALIGN_CENTER, 0, 0);
-    // lv_obj_set_style_text_font(time_label, &lv_font_montserrat_8, 0);
-    
-    // Battery indicator (right side)
-    battery_label = lv_label_create(header_bar);
-    lv_label_set_text(battery_label, "100%");
-    lv_obj_align(battery_label, LV_ALIGN_RIGHT_MID, -2, 0);
-    // lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_8, 0);
-}
-
-void create_home_screen() {
-    // Create header first
-    create_header_bar();
-    
-    // Main content area (below header)
-    lv_obj_t * content = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(content, 128, 52);  // 64 - 12 = 52px remaining
-    lv_obj_align(content, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_radius(content, 0, 0);
-    lv_obj_set_style_border_width(content, 0, 0);
-    lv_obj_set_style_pad_all(content, 4, 0);
-    
-    // Welcome message or status
-    lv_obj_t * welcome_label = lv_label_create(content);
-    lv_label_set_text(welcome_label, "ESP32 Ready");
-    lv_obj_align(welcome_label, LV_ALIGN_TOP_MID, 0, 5);
-    
-    // Add some menu options
-    lv_obj_t * menu_label = lv_label_create(content);
-    lv_label_set_text(menu_label, 
-        LV_SYMBOL_WIFI " WiFi\n"
-        LV_SYMBOL_BLUETOOTH " BT Scan\n"
-        LV_SYMBOL_SETTINGS " Settings");
-    lv_obj_align(menu_label, LV_ALIGN_TOP_LEFT, 5, 20);
-    // lv_obj_set_style_text_font(menu_label, &lv_font_montserrat_8, 0);
-}
-
-// Function to update WiFi icon based on connection status
-void update_wifi_status(bool connected) {
-    if (wifi_icon != NULL) {
-        if (connected) {
-            lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
-        } else {
-            lv_label_set_text(wifi_icon, "X");
-        }
-    }
 }
 
 void setup() {
@@ -116,66 +129,108 @@ void setup() {
     SPI.begin(18, 19, 23, OLED_CS); 
 
     if(!display.begin(SSD1306_SWITCHCAPVCC)) {
-        Serial.println("SSD1306 allocation failed");
-        for(;;); 
+        Serial.println("SSD1306 failed");
+        for(;;);
     }
     
+    // Show initial screen immediately
     display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+    
+    // Draw header
+    display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
+    
+    // Show X for WiFi (not connected yet)
+    display.setCursor(6, 2);
+    display.print("Offline");
+    
+    // Show time placeholder
+    display.setCursor(50, 2);
+    display.print("--:--");
+    
+    // Show battery
+    display.setCursor(95, 2);
+    display.print("100%");
+    
+    // Content
+    display.setCursor(30, 20);
+    display.print("ESP32 Ready");
+    display.setCursor(5, 35);
+    display.print("WiFi");
+    display.setCursor(5, 45);
+    display.print("BT Scan");
+    display.setCursor(5, 55);
+    display.print("Settings");
+    
     display.display();
     
-    // LVGL Init
-    lv_init();
-    lv_disp_draw_buf_init(&draw_buf, buf, NULL, 128 * 64);
-
-    // Display Driver Setup
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = 128;
-    disp_drv.ver_res = 64;
-    disp_drv.flush_cb = my_disp_flush;
-    disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
-
-    // Create the home screen with header
-    create_home_screen();
-    
+    // Start WiFi connection in background (non-blocking)
+    WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
-    Serial.println("Setup complete");
+    
+    Serial.println("Setup complete - WiFi connecting in background");
 }
 
 void loop() {
-    lv_timer_handler();
-    delay(5);
-    
+    static unsigned long last_screen_update = 0;
     unsigned long currentMillis = millis();
     wl_status_t status = WiFi.status();
 
     if (status == WL_CONNECTED) {
-        digitalWrite(LED_PIN, HIGH); 
+        digitalWrite(LED_PIN, HIGH);
         
         if (!isConnected) {
-            update_wifi_status(true);
             ArduinoOTA.begin();
             isConnected = true;
             Serial.println("WiFi Connected!");
+            Serial.print("RSSI: ");
+            Serial.println(WiFi.RSSI());
+            
+            // Immediately update screen to show WiFi connected
+            drawHomeScreen();
         }
+        
+        if (!timeConfigured) {
+            Serial.println("Configuring time...");
+            configTime(2 * 3600, 3600, "pool.ntp.org", "time.nist.gov");
+            timeConfigured = true;
+            
+            // Non-blocking time sync check
+            Serial.println("Waiting for NTP sync (background)");
+        }
+        
         ArduinoOTA.handle();
+        
+        // Update screen every second when connected
+        if (currentMillis - last_screen_update >= 1000) {
+            last_screen_update = currentMillis;
+            drawHomeScreen();
+        }
 
     } else {
+        // Not connected
         if (isConnected) {
-            update_wifi_status(false);
             isConnected = false;
+            timeConfigured = false;
+            Serial.println("WiFi disconnected");
+            
+            // Immediately update screen to show disconnected
+            drawHomeScreen();
         }
 
-        if (status == WL_DISCONNECTED || status == WL_IDLE_STATUS) {
-            blinkInterval = 500; 
-        } else {
-            blinkInterval = 1500; 
-        }
+        // Blink LED based on connection status
+        blinkInterval = (status == WL_DISCONNECTED || status == WL_IDLE_STATUS) ? 500 : 1500;
 
         if (currentMillis - previousMillis >= blinkInterval) {
             previousMillis = currentMillis;
             digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        }
+        
+        // Update screen occasionally even when disconnected (every 2 seconds)
+        if (currentMillis - last_screen_update >= 2000) {
+            last_screen_update = currentMillis;
+            drawHomeScreen();
         }
     }
 }
