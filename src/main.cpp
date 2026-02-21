@@ -12,6 +12,11 @@ const int LED_PIN = 2;
 #define OLED_CS     14   
 #define OLED_RESET  25   
 
+// Joystick pins
+#define JOYSTICK_SW  16 // Button
+#define JOYSTICK_VRY 35  // Y axis (vertical)
+#define JOYSTICK_VRX 34  // X axis (horizontal)
+
 Adafruit_SSD1306 display(128, 64, &SPI, OLED_DC, OLED_RESET, OLED_CS);
 
 unsigned long previousMillis = 0;
@@ -19,14 +24,55 @@ int blinkInterval = 1000;
 bool isConnected = false;
 bool timeConfigured = false;
 
-// Draw WiFi icon with curved arcs
+// Menu and joystick state
+int selectedMenuItem = 0;
+unsigned long lastJoystickRead = 0;
+const int JOYSTICK_DEBOUNCE_MS = 50;
+const int JOYSTICK_THRESHOLD = 1500;
+bool lastButtonState = true;
+
+void handleJoystickInput() {
+    unsigned long currentTime = millis();
+
+    int vrx = analogRead(JOYSTICK_VRX);
+    int vry = analogRead(JOYSTICK_VRY);
+    bool buttonPressed = digitalRead(JOYSTICK_SW) == LOW;
+
+    // Y-axis navigation
+    if (vry < JOYSTICK_THRESHOLD) {
+        if (currentTime - lastJoystickRead >= JOYSTICK_DEBOUNCE_MS) {
+            selectedMenuItem = (selectedMenuItem + 1) % 3;
+            lastJoystickRead = currentTime;
+            Serial.println("Joystick Down - Selected: " + String(selectedMenuItem));
+        }
+    }
+    else if (vry > 4095 - JOYSTICK_THRESHOLD) {
+        if (currentTime - lastJoystickRead >= JOYSTICK_DEBOUNCE_MS) {
+            selectedMenuItem = (selectedMenuItem - 1 + 3) % 3;
+            lastJoystickRead = currentTime;
+            Serial.println("Joystick Up - Selected: " + String(selectedMenuItem));
+        }
+    }
+
+    // Button press
+    if (buttonPressed && lastButtonState) {
+        lastButtonState = false;
+        Serial.println("Button pressed on menu item: " + String(selectedMenuItem));
+        switch (selectedMenuItem) {
+            case 0: Serial.println("Selected: WiFi"); break;
+            case 1: Serial.println("Selected: BT Scan"); break;
+            case 2: Serial.println("Selected: Settings"); break;
+        }
+    }
+    else if (!buttonPressed && !lastButtonState) {
+        lastButtonState = true;
+    }
+}
+
 void drawWiFiIcon(int x, int y, int strength) {
-    // Draw dot at bottom (always on if connected)
     display.fillCircle(x, y, 1, SSD1306_WHITE);
     
-    // Draw arcs based on signal strength (1-4)
     if (strength >= 1) {
-        // First arc (smallest/closest)
         display.drawPixel(x-1, y-1, SSD1306_WHITE);
         display.drawPixel(x+1, y-1, SSD1306_WHITE);
         display.drawPixel(x-2, y-2, SSD1306_WHITE);
@@ -34,7 +80,6 @@ void drawWiFiIcon(int x, int y, int strength) {
     }
     
     if (strength >= 2) {
-        // Second arc
         display.drawPixel(x-2, y-3, SSD1306_WHITE);
         display.drawPixel(x+2, y-3, SSD1306_WHITE);
         display.drawPixel(x-3, y-4, SSD1306_WHITE);
@@ -44,7 +89,6 @@ void drawWiFiIcon(int x, int y, int strength) {
     }
     
     if (strength >= 3) {
-        // Third arc
         display.drawPixel(x-4, y-6, SSD1306_WHITE);
         display.drawPixel(x+4, y-6, SSD1306_WHITE);
         display.drawPixel(x-5, y-7, SSD1306_WHITE);
@@ -54,7 +98,6 @@ void drawWiFiIcon(int x, int y, int strength) {
     }
     
     if (strength >= 4) {
-        // Fourth arc (largest/furthest)
         display.drawPixel(x-6, y-9, SSD1306_WHITE);
         display.drawPixel(x+6, y-9, SSD1306_WHITE);
         display.drawPixel(x-7, y-10, SSD1306_WHITE);
@@ -67,31 +110,24 @@ void drawWiFiIcon(int x, int y, int strength) {
 void drawHomeScreen() {
     display.clearDisplay();
     
-    // Header
     display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
     
-    // WiFi strength indicator
     if (WiFi.status() == WL_CONNECTED) {
         int rssi = WiFi.RSSI();
         int strength;
         
-        // Map RSSI to strength (1-4 bars)
-        if (rssi >= -50) strength = 4;      // Excellent
-        else if (rssi >= -60) strength = 3; // Good
-        else if (rssi >= -70) strength = 2; // Fair
-        else if (rssi >= -80) strength = 1; // Weak
-        else strength = 1;                   // Very weak
+        if (rssi >= -50) strength = 4;
+        else if (rssi >= -60) strength = 3;
+        else if (rssi >= -70) strength = 2;
+        else strength = 1;
         
         drawWiFiIcon(10, 10, strength);
-        
     } else {
-        // Not connected - show X
         display.setTextSize(1);
         display.setCursor(6, 2);
         display.print("X");
     }
     
-    // Time (center)
     display.setTextSize(1);
     display.setCursor(50, 2);
     time_t now = time(nullptr);
@@ -104,20 +140,36 @@ void drawHomeScreen() {
         display.print("--:--");
     }
     
-    // Battery (right)
     display.setCursor(95, 2);
     display.print("100%");
+
     
-    // Content area
-    display.setCursor(30, 20);
-    display.print("ESP32 Ready");
-    
+    // Menu item 0: WiFi
     display.setCursor(5, 35);
+    if (selectedMenuItem == 0) {
+        display.fillRect(1, 33, 50, 8, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+    }
     display.print("WiFi");
+    display.setTextColor(SSD1306_WHITE);
+    
+    // Menu item 1: BT Scan
     display.setCursor(5, 45);
+    if (selectedMenuItem == 1) {
+        display.fillRect(1, 43, 50, 8, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+    }
     display.print("BT Scan");
+    display.setTextColor(SSD1306_WHITE);
+    
+    // Menu item 2: Settings
     display.setCursor(5, 55);
+    if (selectedMenuItem == 2) {
+        display.fillRect(1, 53, 50, 8, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+    }
     display.print("Settings");
+    display.setTextColor(SSD1306_WHITE);
     
     display.display();
 }
@@ -125,6 +177,10 @@ void drawHomeScreen() {
 void setup() {
     Serial.begin(115200);
     pinMode(LED_PIN, OUTPUT);
+    
+    pinMode(JOYSTICK_SW, INPUT_PULLUP);
+    analogSetPinAttenuation(JOYSTICK_VRX, ADC_11db);
+    analogSetPinAttenuation(JOYSTICK_VRY, ADC_11db);
 
     SPI.begin(18, 19, 23, OLED_CS); 
 
@@ -133,29 +189,21 @@ void setup() {
         for(;;);
     }
     
-    // Show initial screen immediately
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
     
-    // Draw header
     display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
     
-    // Show X for WiFi (not connected yet)
     display.setCursor(6, 2);
     display.print("Offline");
     
-    // Show time placeholder
     display.setCursor(50, 2);
     display.print("--:--");
     
-    // Show battery
     display.setCursor(95, 2);
     display.print("100%");
     
-    // Content
-    display.setCursor(30, 20);
-    display.print("ESP32 Ready");
     display.setCursor(5, 35);
     display.print("WiFi");
     display.setCursor(5, 45);
@@ -165,7 +213,6 @@ void setup() {
     
     display.display();
     
-    // Start WiFi connection in background (non-blocking)
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     
@@ -176,6 +223,8 @@ void loop() {
     static unsigned long last_screen_update = 0;
     unsigned long currentMillis = millis();
     wl_status_t status = WiFi.status();
+    
+    handleJoystickInput();
 
     if (status == WL_CONNECTED) {
         digitalWrite(LED_PIN, HIGH);
@@ -186,8 +235,6 @@ void loop() {
             Serial.println("WiFi Connected!");
             Serial.print("RSSI: ");
             Serial.println(WiFi.RSSI());
-            
-            // Immediately update screen to show WiFi connected
             drawHomeScreen();
         }
         
@@ -195,31 +242,24 @@ void loop() {
             Serial.println("Configuring time...");
             configTime(2 * 3600, 3600, "pool.ntp.org", "time.nist.gov");
             timeConfigured = true;
-            
-            // Non-blocking time sync check
             Serial.println("Waiting for NTP sync (background)");
         }
         
         ArduinoOTA.handle();
         
-        // Update screen every second when connected
         if (currentMillis - last_screen_update >= 1000) {
             last_screen_update = currentMillis;
             drawHomeScreen();
         }
 
     } else {
-        // Not connected
         if (isConnected) {
             isConnected = false;
             timeConfigured = false;
             Serial.println("WiFi disconnected");
-            
-            // Immediately update screen to show disconnected
             drawHomeScreen();
         }
 
-        // Blink LED based on connection status
         blinkInterval = (status == WL_DISCONNECTED || status == WL_IDLE_STATUS) ? 500 : 1500;
 
         if (currentMillis - previousMillis >= blinkInterval) {
@@ -227,7 +267,6 @@ void loop() {
             digitalWrite(LED_PIN, !digitalRead(LED_PIN));
         }
         
-        // Update screen occasionally even when disconnected (every 2 seconds)
         if (currentMillis - last_screen_update >= 2000) {
             last_screen_update = currentMillis;
             drawHomeScreen();
