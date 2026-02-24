@@ -26,7 +26,7 @@ void handleWiFi() {
             ArduinoOTA.begin();
             isConnected = true;
             Serial.println("WiFi Connected! RSSI: " + String(WiFi.RSSI()));
-            drawHomeScreen();
+            drawHomeMenu();
         }
 
         if (!timeConfigured) {
@@ -42,7 +42,7 @@ void handleWiFi() {
             isConnected = false;
             timeConfigured = false;
             Serial.println("WiFi disconnected");
-            drawHomeScreen();
+            drawHomeMenu();
         }
     }
 }

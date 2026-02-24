@@ -3,7 +3,11 @@
 #include "display/display.h"
 #include "joystick/joystick.h"
 #include "wifi/wifi.h"
+#include "attack/attack.h"
+#include "attack/sniffer.h"
+#include "ui/menu.h"
 #include <WiFi.h> 
+
 unsigned long previousMillis = 0;
 unsigned long lastScreenUpdate = 0;
 
@@ -15,6 +19,9 @@ void setup() {
     showLogo();
     initJoystick();
     initWiFi();
+    initAttackManager();
+    initSniffer();
+    initMenuSystem();
 }
 
 void loop() {
@@ -22,6 +29,7 @@ void loop() {
 
     handleJoystickInput();
     handleWiFi();
+    handleAttackLoop();
 
     // LED blink when disconnected
     if (!getIsConnected()) {
@@ -39,6 +47,6 @@ void loop() {
     int refreshRate = getIsConnected() ? 1000 : 2000;
     if (currentMillis - lastScreenUpdate >= refreshRate) {
         lastScreenUpdate = currentMillis;
-        drawHomeScreen();
+        drawCurrentMenu();
     }
 }
