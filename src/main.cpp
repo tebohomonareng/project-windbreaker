@@ -29,7 +29,6 @@ void loop() {
 
     handleJoystickInput();
     handleWiFi();
-    handleAttackLoop();
 
     // LED blink when disconnected
     if (!getIsConnected()) {

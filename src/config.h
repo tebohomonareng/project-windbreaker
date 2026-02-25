@@ -18,4 +18,9 @@ const int LED_PIN  =   2;
 
 #define MENU_ITEM_COUNT 3
 
+// Grid constants
+#define GRID_COLS  2
+#define GRID_ROWS  2
+
+
 

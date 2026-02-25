@@ -9,13 +9,6 @@ static HomeMenuItem currentHomeItem = HOME_WIFI;
 static WiFiSubmenuItem currentWiFiItem = WIFI_SCAN;
 static SettingsSubmenuItem currentSettingsItem = SETTINGS_CHANNEL;
 static InfoSubmenuItem currentInfoItem = INFO_DEVICE;
-static int selectedItem = 0;
-
-// Scan menu
-static NetworkInfo networks[20];
-static uint16_t networkCount = 0;
-static unsigned long lastScanTime = 0;
-static const unsigned long SCAN_INTERVAL = 2000;
 
 // Navigation debouncing
 static unsigned long lastBackButtonTime = 0;
@@ -52,23 +45,16 @@ void handleMenuInput(int x, int y, bool button_pressed) {
             case MENU_WIFI_SUBMENU:
                 switch (currentWiFiItem) {
                     case WIFI_SCAN:
-                        startNetworkScan();
-                        Serial.println("[MENU] Network scan started");
+                        Serial.println("[MENU] WiFi Scan UI");
                         break;
                     case WIFI_DEAUTH:
-                        if (networkCount > 0) {
-                            startDeauthAttack(networks[selectedItem % networkCount].bssid, 
-                                            networks[selectedItem % networkCount].channel);
-                            Serial.println("[MENU] Deauth attack started");
-                        }
+                        Serial.println("[MENU] Deauth UI");
                         break;
                     case WIFI_BEACON:
-                        startBeaconSpoof("TestSSID", 6);
-                        Serial.println("[MENU] Beacon spoof started");
+                        Serial.println("[MENU] Beacon Spoof UI");
                         break;
                     case WIFI_STATS:
-                        enablePacketSniffer(6);
-                        Serial.println("[MENU] Packet sniffer enabled");
+                        Serial.println("[MENU] Packet Stats UI");
                         break;
                     case WIFI_BACK:
                         setCurrentMenu(MENU_HOME);

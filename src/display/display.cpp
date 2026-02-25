@@ -9,6 +9,7 @@
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <time.h>
+#include <algorithm>
 
 // Grid layout constants
 #define HEADER_H   12
@@ -25,9 +26,9 @@ struct MenuItem {
 };
 
 static const MenuItem menuItems[MENU_ITEM_COUNT] = {
-    { "WiFi" },
-    { "Settings"},
-    { "Info"}
+    { "WiFi", "W" },
+    { "Settings", "S"},
+    { "Info", "I"}
 };
 
 const unsigned char myLogo[] PROGMEM = {
@@ -127,7 +128,7 @@ void drawHomeMenu() {
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
 
-    // Header line with status info
+    // Header line
     display.drawFastHLine(0, HEADER_H, 128, SSD1306_WHITE);
 
     // WiFi indicator
@@ -160,28 +161,10 @@ void drawHomeMenu() {
     display.setCursor(95, 2);
     display.print("100%");
 
-    // Main menu items
-    const char* mainItems[] = {
-        "WiFi Tools",
-        "Settings",
-        "Device Info"
-    };
-    
-    // Draw main menu items with selection
+    // Draw grid cells (2x2)
     HomeMenuItem selected = getCurrentHomeItem();
     for (int i = 0; i < HOME_SUBMENU_COUNT; i++) {
-        display.setCursor(5, 20 + (i * 12));
-        
-        if (i == selected) {
-            display.print(">> ");
-            display.setTextColor(SSD1306_BLACK);
-            display.print(mainItems[i]);
-            display.setTextColor(SSD1306_WHITE);
-            display.println();
-        } else {
-            display.print("   ");
-            display.println(mainItems[i]);
-        }
+        drawGridCell(i, (int)selected);
     }
 
     display.display();
@@ -194,12 +177,50 @@ void drawScanResults() {
     
     // Header
     display.setCursor(0, 0);
-    display.println("[SCAN RESULTS]");
+    display.println("[NETWORK SCAN]");
     display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
     
+    // Check scan status
+    int16_t scan_count = WiFi.scanComplete();
+    
     display.setCursor(0, 15);
-    display.println("Scanning networks...");
-    display.println("Press back to exit");
+    
+    if (scan_count == WIFI_SCAN_RUNNING) {
+        display.println("Scanning...");
+        display.println("");
+        display.println("Please wait");
+    } else if (scan_count <= 0) {
+        display.println("No networks found");
+        display.println("");
+        display.println("Press button to");
+        display.println("scan again");
+    } else {
+        // Show network count and info
+        display.print("Networks found: ");
+        display.println(scan_count);
+        display.println("");
+        
+        // Show first 3 networks
+        int show_count = (scan_count < 3) ? scan_count : 3;
+        for (int i = 0; i < show_count; i++) {
+            String ssid = WiFi.SSID(i);
+            int rssi = WiFi.RSSI(i);
+            uint8_t* bssid = WiFi.BSSID(i);
+            
+            // Truncate SSID if too long
+            if (ssid.length() > 12) {
+                ssid = ssid.substring(0, 12);
+                ssid += "..";
+            }
+            
+            display.print(i+1);
+            display.print(". ");
+            display.print(ssid);
+            display.print(" (");
+            display.print(rssi);
+            display.println("dBm)");
+        }
+    }
     
     display.display();
 }
@@ -210,9 +231,9 @@ void drawWiFiSubmenu() {
     display.setTextSize(1);
     
     // Header
-    display.setCursor(0, 0);
-    display.println("[WiFi TOOLS]");
     display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+    display.setCursor(0, 2);
+    display.println("[WiFi]");
     
     // WiFi submenu items
     const char* wifiItems[] = {
@@ -223,21 +244,23 @@ void drawWiFiSubmenu() {
         "EXIT"
     };
     
-    // Draw submenu items with selection
+    // Display as vertical list
     int selected = getCurrentWiFiItem();
     for (int i = 0; i < WIFI_SUBMENU_COUNT; i++) {
-        display.setCursor(5, 15 + (i * 9));
+        int y = 14 + (i * 10);
+        
+        display.setCursor(2, y);
         
         if (i == selected) {
-            display.print(">> ");
+            display.fillRect(0, y-1, 128, 9, SSD1306_WHITE);
             display.setTextColor(SSD1306_BLACK);
-            display.print(wifiItems[i]);
-            display.setTextColor(SSD1306_WHITE);
-            display.println();
+            display.print(">> ");       
         } else {
+            display.setTextColor(SSD1306_WHITE);
             display.print("   ");
-            display.println(wifiItems[i]);
         }
+        
+        display.println(wifiItems[i]);
     }
     
     display.display();
@@ -249,33 +272,35 @@ void drawSettingsMenu() {
     display.setTextSize(1);
     
     // Header
-    display.setCursor(0, 0);
-    display.println("[SETTINGS]");
     display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+    display.setCursor(0, 2);
+    display.println("[Settings]");
     
     // Settings submenu items
     const char* settingsItems[] = {
-        "Channel: Auto",
-        "Power: Max",
-        "Brightness: High",
+        "Channel",
+        "Power",
+        "Brightness",
         "EXIT"
     };
     
-    // Draw submenu items with selection
+    // Display as vertical list
     int selected = getCurrentSettingsItem();
     for (int i = 0; i < SETTINGS_SUBMENU_COUNT; i++) {
-        display.setCursor(5, 15 + (i * 9));
+        int y = 14 + (i * 10);
+        
+        display.setCursor(2, y);
         
         if (i == selected) {
-            display.print(">> ");
+            display.fillRect(0, y-1, 128, 9, SSD1306_WHITE);
             display.setTextColor(SSD1306_BLACK);
-            display.print(settingsItems[i]);
-            display.setTextColor(SSD1306_WHITE);
-            display.println();
+            display.print(">> ");
         } else {
+            display.setTextColor(SSD1306_WHITE);
             display.print("   ");
-            display.println(settingsItems[i]);
         }
+        
+        display.println(settingsItems[i]);
     }
     
     display.display();
@@ -287,90 +312,42 @@ void drawInfoMenu() {
     display.setTextSize(1);
     
     // Header
-    display.setCursor(0, 0);
-    display.println("[DEVICE INFO]");
     display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+    display.setCursor(0, 2);
+    display.println("[Info]");
     
     // Info submenu items
     const char* infoItems[] = {
-        "Device: ESP32",
-        "Status: Ready",
+        "Device Info",
+        "Status",
+        "MAC Addr",
         "EXIT"
     };
     
-    // Draw submenu items with selection
+    // Display as vertical list
     int selected = getCurrentInfoItem();
     for (int i = 0; i < INFO_SUBMENU_COUNT; i++) {
-        display.setCursor(5, 15 + (i * 9));
+        int y = 14 + (i * 10);
+        
+        display.setCursor(2, y);
         
         if (i == selected) {
-            display.print(">> ");
+            display.fillRect(0, y-1, 128, 9, SSD1306_WHITE);
             display.setTextColor(SSD1306_BLACK);
-            display.print(infoItems[i]);
-            display.setTextColor(SSD1306_WHITE);
-            display.println();
+            display.print(">> ");
         } else {
+            display.setTextColor(SSD1306_WHITE);
             display.print("   ");
-            display.println(infoItems[i]);
         }
+        
+        display.println(infoItems[i]);
     }
     
     display.display();
 }
 
-void drawDeauthStatus() {
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    
-    // Header
-    display.setCursor(0, 0);
-    display.println("[DEAUTH ATTACK]");
-    display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
-    
-    // Status
-    AttackState state = getDeauthState();
-    display.setCursor(0, 15);
-    
-    if (state == ATTACK_STATE_RUNNING) {
-        display.println("Status: ACTIVE");
-        display.println("Packets: " + String(getDeauthPacketsCount()));
-        display.println("");
-        display.println("Press to stop");
-    } else if (state == ATTACK_STATE_PAUSED) {
-        display.println("Status: PAUSED");
-    } else {
-        display.println("Status: IDLE");
-        display.println("Select target to attack");
-    }
-    
-    display.display();
-}
 
-void drawBeaconStatus() {
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    
-    // Header
-    display.setCursor(0, 0);
-    display.println("[BEACON SPOOF]");
-    display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
-    
-    // Status
-    AttackState state = getBeaconState();
-    display.setCursor(0, 15);
-    
-    if (state == ATTACK_STATE_RUNNING) {
-        display.println("Status: SPOOFING");
-        display.println("Press to stop");
-    } else {
-        display.println("Status: IDLE");
-        display.println("Press to start");
-    }
-    
-    display.display();
-}
+
 
 void drawPacketStats() {
     display.clearDisplay();
