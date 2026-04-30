@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include <time.h>
 #include <algorithm>
+#include <cstdio>
 
 // Grid layout constants
 #define HEADER_H   12
@@ -18,6 +19,12 @@
 #define CELL_W     64                        // 128 / 2
 #define CELL_H     26                        // (64 - 12) / 2
 #define GRID_START (HEADER_H)
+
+// Text rendering optimization
+#define CHAR_WIDTH 6
+#define CHAR_HEIGHT 8
+#define MENU_ITEM_HEIGHT 10
+#define MENU_START_Y 14
 
 // Menu items
 struct MenuItem {
@@ -36,6 +43,45 @@ const unsigned char myLogo[] PROGMEM = {
 };
 
 static Adafruit_SSD1306 display(128, 64, &SPI, OLED_DC, OLED_RESET, OLED_CS);
+
+// Helper function: Get battery percentage (placeholder for real implementation)
+ int getBatteryPercent() {
+    // TODO: Implement real battery reading
+    // For now, return a fixed value
+    return 100;
+}
+
+// Helper function: Draw a generic submenu with title and items
+static void drawGenericSubmenu(const char* title, const char* items[], int item_count, int selected) {
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+    
+    // Header
+    display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
+    display.setCursor(0, 2);
+    display.println(title);
+    
+    // Display items as vertical list
+    for (int i = 0; i < item_count; i++) {
+        int y = MENU_START_Y + (i * MENU_ITEM_HEIGHT);
+        display.setCursor(2, y);
+        
+        if (i == selected) {
+            display.fillRect(0, y - 1, 128, 9, SSD1306_WHITE);
+            display.setTextColor(SSD1306_BLACK);
+            display.print(">> ");
+        } else {
+            display.setTextColor(SSD1306_WHITE);
+            display.print("   ");
+        }
+        
+        display.println(items[i]);
+    }
+    
+    display.setTextColor(SSD1306_WHITE);
+    display.display();
+}
 
 void initDisplay() {
     SPI.begin(18, 19, 23, OLED_CS);
@@ -110,17 +156,19 @@ void drawGridCell(int index, int selected) {
     }
 
     // Draw icon (centered horizontally, upper portion of cell)
-    display.setTextSize(1);
     display.setCursor(x + (CELL_W / 2) - 3, y + 6);
     display.print(menuItems[index].icon);
 
     // Draw label (centered horizontally, lower portion of cell)
-    int labelLen = strlen(menuItems[index].label) * 6; // 6px per char at textsize 1
+    const char* label = menuItems[index].label;
+    int labelLen = strlen(label) * CHAR_WIDTH;
     display.setCursor(x + (CELL_W / 2) - (labelLen / 2), y + 16);
-    display.print(menuItems[index].label);
+    display.print(label);
 
-    // Reset text color
-    display.setTextColor(SSD1306_WHITE);
+    // Reset text color only if needed
+    if (isSelected) {
+        display.setTextColor(SSD1306_WHITE);
+    }
 }
 
 void drawHomeMenu() {
@@ -157,9 +205,11 @@ void drawHomeMenu() {
         display.print("--:--");
     }
 
-    // Battery
+    // Battery (now dynamic instead of hardcoded)
     display.setCursor(95, 2);
-    display.print("100%");
+    char battery_str[5];
+    snprintf(battery_str, sizeof(battery_str), "%d%%", getBatteryPercent());
+    display.print(battery_str);
 
     // Draw grid cells (2x2)
     HomeMenuItem selected = getCurrentHomeItem();
@@ -196,29 +246,26 @@ void drawScanResults() {
         display.println("scan again");
     } else {
         // Show network count and info
-        display.print("Networks found: ");
-        display.println(scan_count);
+        char count_str[20];
+        snprintf(count_str, sizeof(count_str), "Networks: %d", scan_count);
+        display.println(count_str);
         display.println("");
         
         // Show first 3 networks
         int show_count = (scan_count < 3) ? scan_count : 3;
+        char network_str[25];
         for (int i = 0; i < show_count; i++) {
             String ssid = WiFi.SSID(i);
             int rssi = WiFi.RSSI(i);
-            uint8_t* bssid = WiFi.BSSID(i);
             
             // Truncate SSID if too long
             if (ssid.length() > 12) {
                 ssid = ssid.substring(0, 12);
-                ssid += "..";
             }
             
-            display.print(i+1);
-            display.print(". ");
-            display.print(ssid);
-            display.print(" (");
-            display.print(rssi);
-            display.println("dBm)");
+            snprintf(network_str, sizeof(network_str), "%d. %s (%d)", 
+                     i + 1, ssid.c_str(), rssi);
+            display.println(network_str);
         }
     }
     
@@ -226,16 +273,6 @@ void drawScanResults() {
 }
 
 void drawWiFiSubmenu() {
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    
-    // Header
-    display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
-    display.setCursor(0, 2);
-    display.println("[WiFi]");
-    
-    // WiFi submenu items
     const char* wifiItems[] = {
         "Scan Networks",
         "Deauth Attack",
@@ -243,107 +280,27 @@ void drawWiFiSubmenu() {
         "Packet Stats",
         "EXIT"
     };
-    
-    // Display as vertical list
-    int selected = getCurrentWiFiItem();
-    for (int i = 0; i < WIFI_SUBMENU_COUNT; i++) {
-        int y = 14 + (i * 10);
-        
-        display.setCursor(2, y);
-        
-        if (i == selected) {
-            display.fillRect(0, y-1, 128, 9, SSD1306_WHITE);
-            display.setTextColor(SSD1306_BLACK);
-            display.print(">> ");       
-        } else {
-            display.setTextColor(SSD1306_WHITE);
-            display.print("   ");
-        }
-        
-        display.println(wifiItems[i]);
-    }
-    
-    display.display();
+    drawGenericSubmenu("[WiFi]", wifiItems, WIFI_SUBMENU_COUNT, getCurrentWiFiItem());
 }
 
 void drawSettingsMenu() {
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    
-    // Header
-    display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
-    display.setCursor(0, 2);
-    display.println("[Settings]");
-    
-    // Settings submenu items
     const char* settingsItems[] = {
         "Channel",
         "Power",
         "Brightness",
         "EXIT"
     };
-    
-    // Display as vertical list
-    int selected = getCurrentSettingsItem();
-    for (int i = 0; i < SETTINGS_SUBMENU_COUNT; i++) {
-        int y = 14 + (i * 10);
-        
-        display.setCursor(2, y);
-        
-        if (i == selected) {
-            display.fillRect(0, y-1, 128, 9, SSD1306_WHITE);
-            display.setTextColor(SSD1306_BLACK);
-            display.print(">> ");
-        } else {
-            display.setTextColor(SSD1306_WHITE);
-            display.print("   ");
-        }
-        
-        display.println(settingsItems[i]);
-    }
-    
-    display.display();
+    drawGenericSubmenu("[Settings]", settingsItems, SETTINGS_SUBMENU_COUNT, getCurrentSettingsItem());
 }
 
 void drawInfoMenu() {
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    
-    // Header
-    display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
-    display.setCursor(0, 2);
-    display.println("[Info]");
-    
-    // Info submenu items
     const char* infoItems[] = {
         "Device Info",
         "Status",
         "MAC Addr",
         "EXIT"
     };
-    
-    // Display as vertical list
-    int selected = getCurrentInfoItem();
-    for (int i = 0; i < INFO_SUBMENU_COUNT; i++) {
-        int y = 14 + (i * 10);
-        
-        display.setCursor(2, y);
-        
-        if (i == selected) {
-            display.fillRect(0, y-1, 128, 9, SSD1306_WHITE);
-            display.setTextColor(SSD1306_BLACK);
-            display.print(">> ");
-        } else {
-            display.setTextColor(SSD1306_WHITE);
-            display.print("   ");
-        }
-        
-        display.println(infoItems[i]);
-    }
-    
-    display.display();
+    drawGenericSubmenu("[Info]", infoItems, INFO_SUBMENU_COUNT, getCurrentInfoItem());
 }
 
 
@@ -360,10 +317,21 @@ void drawPacketStats() {
     display.drawFastHLine(0, 10, 128, SSD1306_WHITE);
     
     display.setCursor(0, 15);
-    display.println("Total: " + String(getTotalPacketCount()));
-    display.println("Beacons: " + String(getPacketCount(PACKET_TYPE_BEACON)));
-    display.println("Deauth: " + String(getPacketCount(PACKET_TYPE_DEAUTH)));
-    display.println("Data: " + String(getPacketCount(PACKET_TYPE_DATA)));
+    
+    // Use formatted strings instead of String concatenation for efficiency
+    char stat_str[20];
+    
+    snprintf(stat_str, sizeof(stat_str), "Total: %u", getTotalPacketCount());
+    display.println(stat_str);
+    
+    snprintf(stat_str, sizeof(stat_str), "Beacons: %u", getPacketCount(PACKET_TYPE_BEACON));
+    display.println(stat_str);
+    
+    snprintf(stat_str, sizeof(stat_str), "Deauth: %u", getPacketCount(PACKET_TYPE_DEAUTH));
+    display.println(stat_str);
+    
+    snprintf(stat_str, sizeof(stat_str), "Data: %u", getPacketCount(PACKET_TYPE_DATA));
+    display.println(stat_str);
     
     display.display();
 }

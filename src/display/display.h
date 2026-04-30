@@ -11,3 +11,6 @@ void drawScanResults();
 void drawDeauthStatus();
 void drawBeaconStatus();
 void drawPacketStats();
+
+// Battery management
+int getBatteryPercent();
